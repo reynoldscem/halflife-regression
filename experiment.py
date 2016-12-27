@@ -258,19 +258,58 @@ def read_data(input_file, method, omit_bias=False, omit_lexemes=False, max_lines
     return instances[:splitpoint], instances[splitpoint:]
 
 
-argparser = argparse.ArgumentParser(description='Fit a SpacedRepetitionModel to data.')
-argparser.add_argument('-b', action="store_true", default=False, help='omit bias feature')
-argparser.add_argument('-l', action="store_true", default=False, help='omit lexeme features')
-argparser.add_argument('-t', action="store_true", default=False, help='omit half-life term')
-argparser.add_argument('-m', action="store", dest="method", default='hlr', help="hlr, lr, leitner, pimsleur")
-argparser.add_argument('-x', action="store", dest="max_lines", type=int, default=None, help="maximum number of lines to read (for dev)")
-argparser.add_argument('input_file', action="store", help='log file for training')
+def build_parser():
+    parser = argparse.ArgumentParser(
+        description='Fit a SpacedRepetitionModel to data.'
+    )
+
+    parser.add_argument(
+        '-b',
+        action="store_true",
+        default=False,
+        help='omit bias feature'
+    )
+    parser.add_argument(
+        '-l',
+        action="store_true",
+        default=False,
+        help='omit lexeme features'
+    )
+    parser.add_argument(
+        '-t',
+        action="store_true",
+        default=False,
+        help='omit half-life term'
+    )
+    parser.add_argument(
+        '-m',
+        action="store",
+        dest="method",
+        default='hlr',
+        help="hlr, lr, leitner, pimsleur"
+    )
+    parser.add_argument(
+        '-x',
+        action="store",
+        dest="max_lines",
+        type=int,
+        default=None, help="maximum number of lines to read (for dev)"
+    )
+    parser.add_argument(
+        'input_file',
+        action="store",
+        help='log file for training'
+    )
+
+    parser.add_argument(
+        '--save-np',
+        action='store_true'
+    )
+
+    return parser
 
 
-if __name__ == "__main__":
-
-    args = argparser.parse_args()
-
+def main(args):
     # model diagnostics
     sys.stderr.write('method = "%s"\n' % args.method)
     if args.b:
@@ -281,7 +320,32 @@ if __name__ == "__main__":
         sys.stderr.write('--> omit_h_term\n')
 
     # read data set
-    trainset, testset = read_data(args.input_file, args.method, args.b, args.l, args.max_lines)
+    trainset, testset = read_data(
+        args.input_file,
+        args.method,
+        args.b,
+        args.l,
+        args.max_lines
+    )
+    if args.save_np:
+        import numpy as np
+        train_data_np = np.array([[v for k,v in entry.fv] for entry in trainset])
+        train_label_np = np.array([[(entry.p, entry.h)] for entry in trainset])
+
+        test_data_np = np.array([[v for k,v in entry.fv] for entry in testset])
+        test_label_np = np.array([[(entry.p, entry.h)] for entry in testset])
+
+        np.savez(
+            'dataset.npz',
+            trainX=train_data_np,
+            trainy=train_label_np,
+            testX=test_data_np,
+            testy=test_label_np
+        )
+
+        sys.exit(0)
+
+    import ipdb; ipdb.set_trace()
     sys.stderr.write('|train| = %d\n' % len(trainset))
     sys.stderr.write('|test|  = %d\n' % len(testset))
 
@@ -291,14 +355,27 @@ if __name__ == "__main__":
     model.eval(testset, 'test')
 
     # write out model weights and predictions
-    filebits = [args.method] + \
-        [k for k, v in sorted(vars(args).iteritems()) if v is True] + \
-        [os.path.splitext(os.path.basename(args.input_file).replace('.gz', ''))[0]]
+    filebits = (
+        [args.method] +
+        [k for k, v in sorted(vars(args).iteritems()) if v is True] +
+        [
+            os.path.splitext(
+                os.path.basename(
+                    args.input_file
+                ).replace('.gz', '')
+            )[0]
+        ]
+    )
     if args.max_lines is not None:
         filebits.append(str(args.max_lines))
     filebase = '.'.join(filebits)
     if not os.path.exists('results/'):
         os.makedirs('results/')
-    model.dump_weights('results/'+filebase+'.weights')
-    model.dump_predictions('results/'+filebase+'.preds', testset)
+    model.dump_weights('results/' + filebase + '.weights')
+    model.dump_predictions('results/' + filebase + '.preds', testset)
     # model.dump_detailed_predictions('results/'+filebase+'.detailed', testset)
+
+
+if __name__ == "__main__":
+    args = build_parser().parse_args()
+    main(args)
